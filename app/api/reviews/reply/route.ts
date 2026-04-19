@@ -1,5 +1,5 @@
 import { auth } from "@/auth"
-import { supabaseAdmin } from "@/lib/supabase"
+import { getSupabaseAdmin } from "@/lib/supabase"
 
 export async function POST(request: Request) {
   const session = await auth()
@@ -15,6 +15,7 @@ export async function POST(request: Request) {
   console.log("返信投稿（デモ）:", { reviewName, comment })
 
   // Supabase に返信履歴を保存
+  const supabaseAdmin = getSupabaseAdmin()
   await supabaseAdmin.from("replies").insert({
     review_id: reviewName,
     content: comment,
