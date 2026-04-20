@@ -43,7 +43,7 @@ function buildReviewCarousel() {
           },
           {
             type: "text",
-            text: r.comment?.slice(0, 40) + "..." ?? "（コメントなし）",
+            text: r.comment ? r.comment.slice(0, 40) + "..." : "（コメントなし）",
             size: "xs",
             color: "#666666",
             wrap: true,
