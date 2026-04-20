@@ -117,26 +117,31 @@ export async function POST(request: Request) {
         const review = dummyReviews[num - 1]
         const rating = starRatingToNumber(review.starRating)
 
-        // Claude Haiku で生成（同期処理・高速）
-        const message = await anthropic.messages.create({
-          model: "claude-haiku-4-5-20251001",
-          max_tokens: 300,
-          messages: [
-            {
-              role: "user",
-              content: `「${review.businessName}」のオーナーとして、以下の口コミへの返信文を日本語150文字以内で書いてください。返信文のみ出力。
-
-投稿者：${review.reviewer.displayName}
-評価：${rating}点/5点
-内容：${review.comment ?? "コメントなし"}`,
-            },
-          ],
-        })
-
-        const replyText =
-          message.content[0].type === "text" ? message.content[0].text : ""
-
+        // 即座に「生成中...」と返信
         await replyMessage(replyToken, [
+          { type: "text", text: "✨ AI が返信文を生成中です..." },
+        ])
+
+        // Claude Haiku で生成
+        let replyText = ""
+        try {
+          const message = await anthropic.messages.create({
+            model: "claude-haiku-4-5-20251001",
+            max_tokens: 200,
+            messages: [
+              {
+                role: "user",
+                content: `口コミ返信文を100文字以内で書いてください。返信文のみ出力。\n投稿者:${review.reviewer.displayName}\n評価:${rating}/5\n内容:${review.comment ?? "なし"}`,
+              },
+            ],
+          })
+          replyText =
+            message.content[0].type === "text" ? message.content[0].text : "生成に失敗しました"
+        } catch (e) {
+          replyText = "生成エラー: " + String(e)
+        }
+
+        await pushMessage(userId, [
           {
             type: "flex",
             altText: "返信案",
