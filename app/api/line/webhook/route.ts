@@ -24,7 +24,6 @@ function buildReviewCarousel() {
 
     return {
       type: "bubble",
-      size: "kilo",
       body: {
         type: "box",
         layout: "vertical",
