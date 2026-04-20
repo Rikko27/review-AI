@@ -1,4 +1,5 @@
 import { createHmac } from "crypto"
+import { after } from "next/server"
 import { dummyReviews, starRatingToNumber } from "@/lib/dummy-reviews"
 import Anthropic from "@anthropic-ai/sdk"
 
@@ -41,18 +42,8 @@ function buildReviewCarousel() {
         layout: "vertical",
         spacing: "sm",
         contents: [
-          {
-            type: "text",
-            text: stars,
-            color: "#FFB800",
-            size: "md",
-          },
-          {
-            type: "text",
-            text: r.reviewer.displayName,
-            weight: "bold",
-            size: "sm",
-          },
+          { type: "text", text: stars, color: "#FFB800", size: "md" },
+          { type: "text", text: r.reviewer.displayName, weight: "bold", size: "sm" },
           {
             type: "text",
             text: r.comment ? r.comment.slice(0, 40) + "..." : "（コメントなし）",
@@ -85,10 +76,7 @@ function buildReviewCarousel() {
   return {
     type: "flex",
     altText: "未返信の口コミ一覧",
-    contents: {
-      type: "carousel",
-      contents: bubbles,
-    },
+    contents: { type: "carousel", contents: bubbles },
   }
 }
 
@@ -117,10 +105,7 @@ export async function POST(request: Request) {
     // 「口コミ」と送ったらカルーセルで表示
     if (text === "口コミ" || text === "口コミを見る") {
       await replyMessage(replyToken, [
-        {
-          type: "text",
-          text: `未返信の口コミが ${dummyReviews.length} 件あります👇`,
-        },
+        { type: "text", text: `未返信の口コミが ${dummyReviews.length} 件あります👇` },
         buildReviewCarousel(),
       ])
       continue
@@ -133,22 +118,20 @@ export async function POST(request: Request) {
         const review = dummyReviews[num - 1]
         const rating = starRatingToNumber(review.starRating)
 
-        // まず「生成中...」と即座に返信
+        // 即座に「生成中...」と返信
         await replyMessage(replyToken, [
-          {
-            type: "text",
-            text: "✨ AI が返信文を生成中です...",
-          },
+          { type: "text", text: "✨ AI が返信文を生成中です..." },
         ])
 
-        // Claude API で生成（時間がかかってもOK）
-        const message = await anthropic.messages.create({
-          model: "claude-sonnet-4-6",
-          max_tokens: 500,
-          messages: [
-            {
-              role: "user",
-              content: `あなたは「${review.businessName}」のオーナーです。
+        // レスポンス後にバックグラウンドで処理
+        after(async () => {
+          const message = await anthropic.messages.create({
+            model: "claude-sonnet-4-6",
+            max_tokens: 500,
+            messages: [
+              {
+                role: "user",
+                content: `あなたは「${review.businessName}」のオーナーです。
 以下のGoogle マップの口コミに対して、丁寧で温かみのある返信文を日本語で書いてください。
 
 投稿者：${review.reviewer.displayName}
@@ -156,59 +139,55 @@ export async function POST(request: Request) {
 内容：${review.comment ?? "（コメントなし）"}
 
 200文字以内で返信文のみを出力してください。`,
+              },
+            ],
+          })
+
+          const replyText =
+            message.content[0].type === "text" ? message.content[0].text : ""
+
+          await pushMessage(userId, [
+            {
+              type: "flex",
+              altText: "返信案",
+              contents: {
+                type: "bubble",
+                body: {
+                  type: "box",
+                  layout: "vertical",
+                  spacing: "md",
+                  contents: [
+                    {
+                      type: "text",
+                      text: `${review.reviewer.displayName}さんへの返信案`,
+                      weight: "bold",
+                      size: "sm",
+                      color: "#666666",
+                    },
+                    { type: "text", text: replyText, wrap: true, size: "sm" },
+                  ],
+                },
+                footer: {
+                  type: "box",
+                  layout: "vertical",
+                  contents: [
+                    {
+                      type: "button",
+                      style: "primary",
+                      color: "#22C55E",
+                      action: {
+                        type: "message",
+                        label: "✅ Google に投稿する",
+                        text: `投稿:${num}`,
+                      },
+                    },
+                  ],
+                },
+              },
             },
-          ],
+          ])
         })
 
-        const replyText =
-          message.content[0].type === "text" ? message.content[0].text : ""
-
-        // Push API で返信案を送信
-        await pushMessage(userId, [
-          {
-            type: "flex",
-            altText: "返信案",
-            contents: {
-              type: "bubble",
-              body: {
-                type: "box",
-                layout: "vertical",
-                spacing: "md",
-                contents: [
-                  {
-                    type: "text",
-                    text: `${review.reviewer.displayName}さんへの返信案`,
-                    weight: "bold",
-                    size: "sm",
-                    color: "#666666",
-                  },
-                  {
-                    type: "text",
-                    text: replyText,
-                    wrap: true,
-                    size: "sm",
-                  },
-                ],
-              },
-              footer: {
-                type: "box",
-                layout: "vertical",
-                contents: [
-                  {
-                    type: "button",
-                    style: "primary",
-                    color: "#22C55E",
-                    action: {
-                      type: "message",
-                      label: "✅ Google に投稿する",
-                      text: `投稿:${num}`,
-                    },
-                  },
-                ],
-              },
-            },
-          },
-        ])
         continue
       }
     }
@@ -218,20 +197,14 @@ export async function POST(request: Request) {
       const num = parseInt(text.replace("投稿:", ""))
       const review = dummyReviews[num - 1]
       await replyMessage(replyToken, [
-        {
-          type: "text",
-          text: `✅ ${review?.reviewer.displayName}さんへの返信を Google に投稿しました！`,
-        },
+        { type: "text", text: `✅ ${review?.reviewer.displayName}さんへの返信を Google に投稿しました！` },
       ])
       continue
     }
 
     // その他
     await replyMessage(replyToken, [
-      {
-        type: "text",
-        text: "「口コミ」と送ると未返信の口コミ一覧を確認できます👍",
-      },
+      { type: "text", text: "「口コミ」と送ると未返信の口コミ一覧を確認できます👍" },
     ])
   }
 
