@@ -4,7 +4,7 @@ import Anthropic from "@anthropic-ai/sdk"
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 
-// LINE にメッセージを返信する
+// LINE にメッセージを返信する（reply token 使用・30秒以内）
 async function replyMessage(replyToken: string, messages: object[]) {
   await fetch("https://api.line.me/v2/bot/message/reply", {
     method: "POST",
@@ -13,6 +13,18 @@ async function replyMessage(replyToken: string, messages: object[]) {
       Authorization: `Bearer ${process.env.LINE_CHANNEL_ACCESS_TOKEN}`,
     },
     body: JSON.stringify({ replyToken, messages }),
+  })
+}
+
+// LINE に Push メッセージを送る（userId 宛・時間制限なし）
+async function pushMessage(userId: string, messages: object[]) {
+  await fetch("https://api.line.me/v2/bot/message/push", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${process.env.LINE_CHANNEL_ACCESS_TOKEN}`,
+    },
+    body: JSON.stringify({ to: userId, messages }),
   })
 }
 
@@ -100,6 +112,7 @@ export async function POST(request: Request) {
 
     const text = event.message.text.trim()
     const replyToken = event.replyToken
+    const userId = event.source.userId
 
     // 「口コミ」と送ったらカルーセルで表示
     if (text === "口コミ" || text === "口コミを見る") {
@@ -120,25 +133,38 @@ export async function POST(request: Request) {
         const review = dummyReviews[num - 1]
         const rating = starRatingToNumber(review.starRating)
 
-        const prompt = `あなたは「${review.businessName}」のオーナーです。
+        // まず「生成中...」と即座に返信
+        await replyMessage(replyToken, [
+          {
+            type: "text",
+            text: "✨ AI が返信文を生成中です...",
+          },
+        ])
+
+        // Claude API で生成（時間がかかってもOK）
+        const message = await anthropic.messages.create({
+          model: "claude-sonnet-4-6",
+          max_tokens: 500,
+          messages: [
+            {
+              role: "user",
+              content: `あなたは「${review.businessName}」のオーナーです。
 以下のGoogle マップの口コミに対して、丁寧で温かみのある返信文を日本語で書いてください。
 
 投稿者：${review.reviewer.displayName}
 評価：${rating}点（5点満点）
 内容：${review.comment ?? "（コメントなし）"}
 
-200文字以内で返信文のみを出力してください。`
-
-        const message = await anthropic.messages.create({
-          model: "claude-sonnet-4-6",
-          max_tokens: 500,
-          messages: [{ role: "user", content: prompt }],
+200文字以内で返信文のみを出力してください。`,
+            },
+          ],
         })
 
         const replyText =
           message.content[0].type === "text" ? message.content[0].text : ""
 
-        await replyMessage(replyToken, [
+        // Push API で返信案を送信
+        await pushMessage(userId, [
           {
             type: "flex",
             altText: "返信案",
