@@ -136,7 +136,7 @@ export async function POST(request: Request) {
         const replyText =
           message.content[0].type === "text" ? message.content[0].text : ""
 
-        await pushMessage(userId, [
+        await replyMessage(replyToken, [
           {
             type: "flex",
             altText: "返信案",
