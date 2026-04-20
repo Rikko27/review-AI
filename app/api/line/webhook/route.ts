@@ -1,5 +1,4 @@
 import { createHmac } from "crypto"
-import { after } from "next/server"
 import { dummyReviews, starRatingToNumber } from "@/lib/dummy-reviews"
 import Anthropic from "@anthropic-ai/sdk"
 
@@ -118,75 +117,65 @@ export async function POST(request: Request) {
         const review = dummyReviews[num - 1]
         const rating = starRatingToNumber(review.starRating)
 
-        // 即座に「生成中...」と返信
-        await replyMessage(replyToken, [
-          { type: "text", text: "✨ AI が返信文を生成中です..." },
-        ])
-
-        // レスポンス後にバックグラウンドで処理
-        after(async () => {
-          const message = await anthropic.messages.create({
-            model: "claude-haiku-4-5-20251001",
-            max_tokens: 500,
-            messages: [
-              {
-                role: "user",
-                content: `あなたは「${review.businessName}」のオーナーです。
-以下のGoogle マップの口コミに対して、丁寧で温かみのある返信文を日本語で書いてください。
+        // Claude Haiku で生成（同期処理・高速）
+        const message = await anthropic.messages.create({
+          model: "claude-haiku-4-5-20251001",
+          max_tokens: 300,
+          messages: [
+            {
+              role: "user",
+              content: `「${review.businessName}」のオーナーとして、以下の口コミへの返信文を日本語150文字以内で書いてください。返信文のみ出力。
 
 投稿者：${review.reviewer.displayName}
-評価：${rating}点（5点満点）
-内容：${review.comment ?? "（コメントなし）"}
+評価：${rating}点/5点
+内容：${review.comment ?? "コメントなし"}`,
+            },
+          ],
+        })
 
-200文字以内で返信文のみを出力してください。`,
+        const replyText =
+          message.content[0].type === "text" ? message.content[0].text : ""
+
+        await pushMessage(userId, [
+          {
+            type: "flex",
+            altText: "返信案",
+            contents: {
+              type: "bubble",
+              body: {
+                type: "box",
+                layout: "vertical",
+                spacing: "md",
+                contents: [
+                  {
+                    type: "text",
+                    text: `${review.reviewer.displayName}さんへの返信案`,
+                    weight: "bold",
+                    size: "sm",
+                    color: "#666666",
+                  },
+                  { type: "text", text: replyText, wrap: true, size: "sm" },
+                ],
               },
-            ],
-          })
-
-          const replyText =
-            message.content[0].type === "text" ? message.content[0].text : ""
-
-          await pushMessage(userId, [
-            {
-              type: "flex",
-              altText: "返信案",
-              contents: {
-                type: "bubble",
-                body: {
-                  type: "box",
-                  layout: "vertical",
-                  spacing: "md",
-                  contents: [
-                    {
-                      type: "text",
-                      text: `${review.reviewer.displayName}さんへの返信案`,
-                      weight: "bold",
-                      size: "sm",
-                      color: "#666666",
+              footer: {
+                type: "box",
+                layout: "vertical",
+                contents: [
+                  {
+                    type: "button",
+                    style: "primary",
+                    color: "#22C55E",
+                    action: {
+                      type: "message",
+                      label: "✅ Google に投稿する",
+                      text: `投稿:${num}`,
                     },
-                    { type: "text", text: replyText, wrap: true, size: "sm" },
-                  ],
-                },
-                footer: {
-                  type: "box",
-                  layout: "vertical",
-                  contents: [
-                    {
-                      type: "button",
-                      style: "primary",
-                      color: "#22C55E",
-                      action: {
-                        type: "message",
-                        label: "✅ Google に投稿する",
-                        text: `投稿:${num}`,
-                      },
-                    },
-                  ],
-                },
+                  },
+                ],
               },
             },
-          ])
-        })
+          },
+        ])
 
         continue
       }
