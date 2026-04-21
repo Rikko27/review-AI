@@ -199,9 +199,6 @@ export async function POST(request: Request) {
     const replyToken = event.replyToken
     const userId = event.source.userId
 
-    // TODO: LINE_OWNER_USER_ID 設定後に削除
-    console.log("LINE userId:", userId)
-
     if (text === "口コミ" || text === "口コミを見る") {
       await replyMessage(replyToken, [
         { type: "text", text: `未返信の口コミが ${dummyReviews.length} 件あります👇` },
