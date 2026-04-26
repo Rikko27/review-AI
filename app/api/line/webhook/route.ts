@@ -1,5 +1,6 @@
 import { createHmac } from "crypto"
 import { dummyReviews, starRatingToNumber } from "@/lib/dummy-reviews"
+import { getSupabaseAdmin } from "@/lib/supabase"
 import Anthropic from "@anthropic-ai/sdk"
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
@@ -26,6 +27,17 @@ async function pushMessage(userId: string, messages: object[]) {
   })
 }
 
+async function saveAndGetId(reviewName: string, replyText: string): Promise<string> {
+  const supabase = getSupabaseAdmin()
+  const { data, error } = await supabase
+    .from("replies")
+    .insert({ review_id: reviewName, content: replyText, is_posted: false })
+    .select("id")
+    .single()
+  if (error || !data) throw new Error("Supabase保存失敗: " + JSON.stringify(error))
+  return String(data.id)
+}
+
 async function generateReply(review: (typeof dummyReviews)[0]): Promise<string> {
   const rating = starRatingToNumber(review.starRating)
   const message = await anthropic.messages.create({
@@ -45,12 +57,13 @@ function buildReplyBubble(
   review: (typeof dummyReviews)[0],
   num: number,
   replyText: string,
+  pendingId: string,
   userId: string
 ) {
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL ?? ""
   const editUrl =
     baseUrl +
-    `/edit?idx=${num}&name=${encodeURIComponent(review.reviewer.displayName)}&reply=${encodeURIComponent(replyText)}&userId=${encodeURIComponent(userId)}`
+    `/edit?id=${pendingId}&name=${encodeURIComponent(review.reviewer.displayName)}&userId=${encodeURIComponent(userId)}`
 
   return {
     type: "flex",
@@ -218,14 +231,17 @@ export async function POST(request: Request) {
         ])
 
         let replyText = ""
+        let pendingId = ""
         try {
           replyText = await generateReply(review)
+          pendingId = await saveAndGetId(review.name, replyText)
         } catch (e) {
           console.error("返信生成エラー:", e)
-          replyText = "生成に失敗しました。再度お試しください。"
+          await pushMessage(userId, [{ type: "text", text: "生成に失敗しました。再度お試しください。" }])
+          continue
         }
 
-        await pushMessage(userId, [buildReplyBubble(review, num, replyText, userId)])
+        await pushMessage(userId, [buildReplyBubble(review, num, replyText, pendingId, userId)])
         continue
       }
     }
@@ -241,14 +257,17 @@ export async function POST(request: Request) {
         ])
 
         let replyText = ""
+        let pendingId = ""
         try {
           replyText = await generateReply(review)
+          pendingId = await saveAndGetId(review.name, replyText)
         } catch (e) {
           console.error("再生成エラー:", e)
-          replyText = "生成に失敗しました。再度お試しください。"
+          await pushMessage(userId, [{ type: "text", text: "生成に失敗しました。再度お試しください。" }])
+          continue
         }
 
-        await pushMessage(userId, [buildReplyBubble(review, num, replyText, userId)])
+        await pushMessage(userId, [buildReplyBubble(review, num, replyText, pendingId, userId)])
         continue
       }
     }

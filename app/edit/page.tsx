@@ -1,17 +1,27 @@
 "use client"
 
 import { useSearchParams } from "next/navigation"
-import { Suspense, useState } from "react"
+import { Suspense, useEffect, useState } from "react"
 
 function EditForm() {
   const params = useSearchParams()
-  const idx = params.get("idx") ?? ""
+  const id = params.get("id") ?? ""
   const name = params.get("name") ?? ""
   const userId = params.get("userId") ?? ""
-  const initialReply = params.get("reply") ?? ""
 
-  const [text, setText] = useState(initialReply)
+  const [text, setText] = useState("")
+  const [loading, setLoading] = useState(true)
   const [status, setStatus] = useState<"idle" | "posting" | "done" | "error">("idle")
+
+  useEffect(() => {
+    if (!id) { setLoading(false); return }
+    fetch(`/api/pending-reply?id=${id}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.content) setText(data.content)
+      })
+      .finally(() => setLoading(false))
+  }, [id])
 
   async function handlePost() {
     setStatus("posting")
@@ -19,7 +29,7 @@ function EditForm() {
       const res = await fetch("/api/edit-reply", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ idx, comment: text, userId }),
+        body: JSON.stringify({ id, comment: text, userId }),
       })
       if (!res.ok) throw new Error("投稿失敗")
       setStatus("done")
@@ -46,14 +56,20 @@ function EditForm() {
       </header>
 
       <main className="flex-1 p-4 flex flex-col gap-4">
-        <textarea
-          className="w-full flex-1 min-h-48 p-3 border border-gray-300 rounded-xl text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white"
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          placeholder="返信文を入力..."
-          maxLength={500}
-        />
-        <p className="text-xs text-gray-400 text-right">{text.length} / 500</p>
+        {loading ? (
+          <p className="text-center text-gray-400 mt-10">読み込み中...</p>
+        ) : (
+          <>
+            <textarea
+              className="w-full flex-1 min-h-48 p-3 border border-gray-300 rounded-xl text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white"
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              placeholder="返信文を入力..."
+              maxLength={500}
+            />
+            <p className="text-xs text-gray-400 text-right">{text.length} / 500</p>
+          </>
+        )}
 
         {status === "error" && (
           <p className="text-red-500 text-sm text-center">投稿に失敗しました。もう一度お試しください。</p>
@@ -63,7 +79,7 @@ function EditForm() {
       <footer className="p-4 bg-white border-t">
         <button
           onClick={handlePost}
-          disabled={status === "posting" || text.trim() === ""}
+          disabled={loading || status === "posting" || text.trim() === ""}
           className="w-full py-3 rounded-xl font-bold text-white text-base transition-colors disabled:opacity-50"
           style={{ backgroundColor: status === "posting" ? "#86efac" : "#22C55E" }}
         >

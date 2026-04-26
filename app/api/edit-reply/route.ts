@@ -1,4 +1,3 @@
-import { dummyReviews } from "@/lib/dummy-reviews"
 import { getSupabaseAdmin } from "@/lib/supabase"
 
 async function pushMessage(userId: string, messages: object[]) {
@@ -13,32 +12,32 @@ async function pushMessage(userId: string, messages: object[]) {
 }
 
 export async function POST(request: Request) {
-  const { idx, comment, userId } = await request.json()
+  const { id, comment, userId } = await request.json()
 
-  const num = parseInt(idx)
-  if (isNaN(num) || num < 1 || num > dummyReviews.length) {
-    return Response.json({ error: "無効な口コミ番号" }, { status: 400 })
+  if (!id) {
+    return Response.json({ error: "idが必要です" }, { status: 400 })
   }
   if (!comment || typeof comment !== "string" || comment.trim() === "") {
     return Response.json({ error: "返信文が空です" }, { status: 400 })
   }
 
-  const review = dummyReviews[num - 1]
+  const supabase = getSupabaseAdmin()
 
-  // TODO: 本番では postReply(accessToken, review.name, comment) を呼ぶ
-  console.log("Google返信投稿（編集後・デモ）:", { reviewName: review.name, comment })
+  // 返信内容を更新して投稿済みにする
+  const { data, error } = await supabase
+    .from("replies")
+    .update({ content: comment, is_posted: true })
+    .eq("id", id)
+    .select("review_id")
+    .single()
 
-  // Supabase に返信履歴を保存
-  try {
-    const supabaseAdmin = getSupabaseAdmin()
-    await supabaseAdmin.from("replies").insert({
-      review_id: review.name,
-      content: comment,
-      is_posted: false,
-    })
-  } catch (e) {
-    console.error("Supabase保存エラー:", e)
+  if (error || !data) {
+    console.error("Supabase更新エラー:", error)
+    return Response.json({ error: "更新に失敗しました" }, { status: 500 })
   }
+
+  // TODO: 本番では postReply(accessToken, data.review_id, comment) を呼ぶ
+  console.log("Google返信投稿（編集後・デモ）:", { reviewId: data.review_id, comment })
 
   // LINE に完了通知を Push
   if (userId) {
@@ -46,7 +45,7 @@ export async function POST(request: Request) {
       await pushMessage(userId, [
         {
           type: "text",
-          text: `✅ ${review.reviewer.displayName}さんへの返信を投稿しました！\n\n「${comment.slice(0, 30)}${comment.length > 30 ? "..." : ""}」`,
+          text: `✅ 返信を投稿しました！\n\n「${comment.slice(0, 30)}${comment.length > 30 ? "..." : ""}」`,
         },
       ])
     } catch (e) {
